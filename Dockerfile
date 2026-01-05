@@ -7,13 +7,18 @@ RUN apk add --no-cache \
     python3 \
     make \
     g++ \
-    vips-dev
+    vips-dev \
+    pkgconfig
 
 # Copiar archivos de dependencias
 COPY package*.json ./
 
 # Instalar dependencias
 RUN npm ci --omit=dev
+
+# Reinstalar sharp específicamente para Alpine Linux (musl)
+RUN npm uninstall sharp && \
+    npm install --os=linux --libc=musl --cpu=x64 sharp
 
 # Copiar código fuente
 COPY . .
