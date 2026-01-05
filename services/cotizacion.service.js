@@ -19,14 +19,25 @@ const createCotizacion = async (userId, items) => {
     const cotizacionItems = [];
     const detallesData = [];
 
-    // Procesar items y calcular total
+    // Procesar items, calcular total y verificar stock
     for (const item of items) {
-      // Buscamos el producto
+      // Buscamos el producto con bloqueo para evitar condiciones de carrera
       const producto = await Producto.findByPk(item.productId, {
         transaction: t,
+        lock: true,
       });
 
       if (producto) {
+        const stockActual = producto.stock || 0;
+
+        // Verificar que hay suficiente stock
+        if (stockActual < item.quantity) {
+          throw new Error(
+            `Stock insuficiente para "${producto.nombre}". ` +
+              `Disponible: ${stockActual}, Solicitado: ${item.quantity}`
+          );
+        }
+
         const precioUnitario = parseFloat(producto.precioreferencial);
         const subtotal = precioUnitario * item.quantity;
 
@@ -46,6 +57,12 @@ const createCotizacion = async (userId, items) => {
         });
 
         total += subtotal;
+
+        // DESCONTAR STOCK AL CREAR LA COTIZACIÓN
+        await producto.decrement('stock', {
+          by: item.quantity,
+          transaction: t,
+        });
       } else {
         throw new Error(`Producto con ID ${item.productId} no encontrado`);
       }
@@ -348,39 +365,12 @@ const updateCotizacionStatus = async (id, status) => {
 
     const estadoAnterior = cotizacion.estado;
 
-    // --- DESCONTAR STOCK CUANDO SE ACEPTA LA COTIZACIÓN ---
-    if (status === 'aceptada' && estadoAnterior !== 'aceptada') {
-      for (const detalle of cotizacion.Detallecotizacions) {
-        const producto = await Producto.findByPk(detalle.idproducto, {
-          transaction: t,
-          lock: true, // Bloqueamos la fila para evitar conflictos
-        });
-
-        if (!producto) {
-          throw new Error(
-            `Producto con ID ${detalle.idproducto} no encontrado`
-          );
-        }
-
-        const stockActual = producto.stock || 0;
-
-        if (stockActual < detalle.cantidad) {
-          throw new Error(
-            `Stock insuficiente para el producto: ${producto.nombre}. ` +
-              `Disponible: ${stockActual}, Requerido: ${detalle.cantidad}`
-          );
-        }
-
-        // Descontamos el stock
-        await producto.decrement('stock', {
-          by: detalle.cantidad,
-          transaction: t,
-        });
-      }
-    }
-
-    // --- DEVOLVER STOCK SI SE RECHAZA UNA COTIZACIÓN ACEPTADA ---
-    if (status === 'rechazada' && estadoAnterior === 'aceptada') {
+    // --- DEVOLVER STOCK SI SE RECHAZA O CANCELA UNA COTIZACIÓN PENDIENTE ---
+    // El stock ya se descontó al crear, así que solo devolvemos si se rechaza/cancela
+    if (
+      (status === 'rechazada' || status === 'cancelada') &&
+      estadoAnterior === 'pendiente'
+    ) {
       for (const detalle of cotizacion.Detallecotizacions) {
         const producto = await Producto.findByPk(detalle.idproducto, {
           transaction: t,
