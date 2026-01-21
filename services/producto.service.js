@@ -1,7 +1,8 @@
 const { Producto } = require('../models');
 const fs = require('fs');
 const path = require('path');
-const { Op } = require('sequelize');
+const { Op, Sequelize } = require('sequelize');
+const sequelize = require('../config/database');
 
 // Diccionario de sinónimos para búsqueda
 const SINONIMOS = {
@@ -65,6 +66,7 @@ const formatProducto = (producto) => ({
   category: producto.categoria || producto.marca,
   categoria: producto.categoria,
   marca: producto.marca,
+  unidad: producto.unidad || 'unidad',
   createdAt: producto.fechacreacion,
 });
 
@@ -165,6 +167,33 @@ const getProductoById = async (id) => {
 };
 
 const createProducto = async (data) => {
+  // Validar si ya existe un producto con el mismo nombre y marca
+  const nombreNormalizado = (data.nombre || data.name || '')
+    .trim()
+    .toLowerCase();
+  const marcaNormalizada = (data.marca || '').trim().toLowerCase();
+
+  if (nombreNormalizado) {
+    const productoExistente = await Producto.findOne({
+      where: Sequelize.where(
+        Sequelize.fn('LOWER', Sequelize.col('nombre')),
+        nombreNormalizado,
+      ),
+    });
+
+    if (productoExistente) {
+      // Si existe un producto con el mismo nombre, verificar si también tiene la misma marca
+      const marcaExistente = (productoExistente.marca || '')
+        .trim()
+        .toLowerCase();
+      if (marcaExistente === marcaNormalizada) {
+        throw new Error(
+          `Ya existe un producto con el nombre "${data.nombre || data.name}" y marca "${data.marca}"`,
+        );
+      }
+    }
+  }
+
   const producto = await Producto.create({
     nombre: data.nombre || data.name,
     descripcion: data.descripcion || data.description,
@@ -182,6 +211,37 @@ const updateProducto = async (id, data, imagePath) => {
   const producto = await Producto.findByPk(id);
   if (!producto) {
     return null;
+  }
+
+  // Validar si ya existe otro producto con el mismo nombre y marca
+  const nombreNormalizado = (data.nombre || data.name || '')
+    .trim()
+    .toLowerCase();
+  const marcaNormalizada = (data.marca || '').trim().toLowerCase();
+
+  if (nombreNormalizado) {
+    const productoExistente = await Producto.findOne({
+      where: {
+        idproducto: { [Op.ne]: id }, // Excluir el producto actual
+        [Op.and]: [
+          Sequelize.where(
+            Sequelize.fn('LOWER', Sequelize.col('nombre')),
+            nombreNormalizado,
+          ),
+        ],
+      },
+    });
+
+    if (productoExistente) {
+      const marcaExistente = (productoExistente.marca || '')
+        .trim()
+        .toLowerCase();
+      if (marcaExistente === marcaNormalizada) {
+        throw new Error(
+          `Ya existe otro producto con el nombre "${data.nombre || data.name}" y marca "${data.marca}"`,
+        );
+      }
+    }
   }
 
   const updateData = {

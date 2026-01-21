@@ -11,10 +11,13 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
+    console.log('Getting lista by ID:', req.params.id);
     const lista = await listaescolarService.getById(req.params.id);
     if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+    console.log('Lista found with items:', lista.Itemlistas?.length || 0);
     res.json(lista);
   } catch (error) {
+    console.error('Error getting lista:', error);
     res.status(500).json({ error: error.message });
   }
 };

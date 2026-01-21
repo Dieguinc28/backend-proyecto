@@ -21,6 +21,7 @@ class ListaescolarService {
   }
 
   async getById(id) {
+    console.log('Service: Getting lista by ID:', id);
     const lista = await Listaescolar.findByPk(id, {
       include: [
         { model: Usuario, attributes: ['idusuario', 'nombre', 'email'] },
@@ -32,10 +33,16 @@ class ListaescolarService {
       ],
     });
 
-    if (!lista) return null;
+    if (!lista) {
+      console.log('Service: Lista not found');
+      return null;
+    }
 
+    console.log('Service: Lista found, processing items...');
     // Mapear productos para incluir campo 'precio' e 'imagen'
     const listaJSON = lista.toJSON();
+    console.log('Service: Raw items count:', listaJSON.Itemlistas?.length || 0);
+
     if (listaJSON.Itemlistas && Array.isArray(listaJSON.Itemlistas)) {
       listaJSON.Itemlistas = listaJSON.Itemlistas.map((item) => {
         // Asegurar que el item tenga todos los campos necesarios
@@ -58,6 +65,10 @@ class ListaescolarService {
         }
         return mappedItem;
       });
+      console.log(
+        'Service: Processed items count:',
+        listaJSON.Itemlistas.length,
+      );
     }
     return listaJSON;
   }

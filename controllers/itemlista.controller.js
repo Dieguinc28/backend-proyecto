@@ -30,9 +30,12 @@ exports.getByLista = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
+    console.log('Creating item with data:', req.body);
     const item = await itemlistaService.create(req.body);
+    console.log('Item created successfully:', item);
     res.status(201).json(item);
   } catch (error) {
+    console.error('Error creating item:', error);
     res.status(400).json({ error: error.message });
   }
 };

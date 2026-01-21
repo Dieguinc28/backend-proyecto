@@ -21,11 +21,25 @@ class ItemlistaService {
   }
 
   async create(data) {
-    const item = await Itemlista.create(data);
+    // Validar que los campos requeridos estén presentes
+    if (!data.idlista || !data.idproducto) {
+      throw new Error('idlista e idproducto son requeridos');
+    }
+
+    // Asegurar que cantidad tenga un valor por defecto
+    const itemData = {
+      ...data,
+      cantidad: data.cantidad || 1,
+    };
+
+    const item = await Itemlista.create(itemData);
+
     // Recargar el item con las relaciones para devolver datos completos
-    return await Itemlista.findByPk(item.iditem, {
+    const itemCompleto = await Itemlista.findByPk(item.iditem, {
       include: [Producto],
     });
+
+    return itemCompleto;
   }
 
   async update(id, data) {

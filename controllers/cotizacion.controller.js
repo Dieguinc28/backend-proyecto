@@ -9,7 +9,7 @@ const createCotizacion = async (req, res) => {
     }
     const cotizacion = await cotizacionService.createCotizacion(
       req.user.userId,
-      items
+      items,
     );
 
     // Obtener nombre del usuario para la notificación
@@ -45,7 +45,7 @@ const uploadPdfCotizacion = async (req, res) => {
     }
     const result = await cotizacionService.processPdfCotizacion(
       req.user.userId,
-      req.file
+      req.file,
     );
     res.json(result);
   } catch (error) {
@@ -58,7 +58,7 @@ const uploadPdfCotizacion = async (req, res) => {
 const getMyCotizaciones = async (req, res) => {
   try {
     const cotizaciones = await cotizacionService.getCotizacionesByUsuario(
-      req.user.userId
+      req.user.userId,
     );
     res.json(cotizaciones);
   } catch (error) {
@@ -80,7 +80,7 @@ const updateCotizacionStatus = async (req, res) => {
     const { status } = req.body;
     const cotizacion = await cotizacionService.updateCotizacionStatus(
       req.params.id,
-      status
+      status,
     );
     if (!cotizacion) {
       return res.status(404).json({ message: 'Cotización no encontrada' });
@@ -91,10 +91,29 @@ const updateCotizacionStatus = async (req, res) => {
   }
 };
 
+const downloadCotizacionPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pdfBuffer = await cotizacionService.generateCotizacionPdf(id);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=cotizacion-${id}.pdf`,
+    );
+    res.send(pdfBuffer);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: 'Error al generar PDF', error: error.message });
+  }
+};
+
 module.exports = {
   createCotizacion,
   uploadPdfCotizacion,
   getMyCotizaciones,
   getAllCotizaciones,
   updateCotizacionStatus,
+  downloadCotizacionPdf,
 };

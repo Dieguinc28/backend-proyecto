@@ -11,15 +11,16 @@ router.post(
   '/upload-pdf',
   auth,
   upload.single('pdf'),
-  cotizacionController.uploadPdfCotizacion
+  cotizacionController.uploadPdfCotizacion,
 );
 router.get('/my-quotes', auth, cotizacionController.getMyCotizaciones);
 router.get('/', auth, isAdmin, cotizacionController.getAllCotizaciones);
+router.get('/:id/download', auth, cotizacionController.downloadCotizacionPdf);
 router.patch(
   '/:id/status',
   auth,
   isAdmin,
-  cotizacionController.updateCotizacionStatus
+  cotizacionController.updateCotizacionStatus,
 );
 
 module.exports = router;

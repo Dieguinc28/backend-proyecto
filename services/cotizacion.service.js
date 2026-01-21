@@ -9,6 +9,7 @@ const {
 } = require('../models');
 const pdfParse = require('pdf-parse');
 const fs = require('fs');
+const PDFDocument = require('pdfkit');
 
 const createCotizacion = async (userId, items) => {
   // Iniciamos la transacción para asegurar la integridad de los datos
@@ -34,7 +35,7 @@ const createCotizacion = async (userId, items) => {
         if (stockActual < item.quantity) {
           throw new Error(
             `Stock insuficiente para "${producto.nombre}". ` +
-              `Disponible: ${stockActual}, Solicitado: ${item.quantity}`
+              `Disponible: ${stockActual}, Solicitado: ${item.quantity}`,
           );
         }
 
@@ -77,7 +78,7 @@ const createCotizacion = async (userId, items) => {
         estado: 'pendiente',
         fecha: new Date(),
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     // Crear los detalles de la cotización (dentro de la transacción)
@@ -87,7 +88,7 @@ const createCotizacion = async (userId, items) => {
           idcotizacion: cotizacion.idcotizacion,
           ...detalleData,
         },
-        { transaction: t }
+        { transaction: t },
       );
     }
 
@@ -143,7 +144,7 @@ const processPdfCotizacion = async (userId, file) => {
     if (matches) {
       const quantityRegex = new RegExp(
         `(\\d+)\\s*${producto.nombre}|${producto.nombre}\\s*(\\d+)`,
-        'gi'
+        'gi',
       );
       const quantityMatch = text.match(quantityRegex);
       const quantity = quantityMatch
@@ -172,7 +173,7 @@ const processPdfCotizacion = async (userId, file) => {
 
   const total = foundItems.reduce(
     (sum, item) => sum + item.price * item.quantity,
-    0
+    0,
   );
 
   // Guardar la cotización en la base de datos
@@ -424,10 +425,148 @@ const updateCotizacionStatus = async (id, status) => {
   }
 };
 
+const generateCotizacionPdf = async (cotizacionId) => {
+  try {
+    const cotizacion = await Cotizacion.findByPk(cotizacionId, {
+      include: [
+        {
+          model: Usuario,
+          attributes: ['idusuario', 'nombre', 'email'],
+        },
+        {
+          model: Detallecotizacion,
+          include: [
+            {
+              model: Producto,
+              attributes: [
+                'idproducto',
+                'nombre',
+                'marca',
+                'precioreferencial',
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!cotizacion) {
+      throw new Error('Cotización no encontrada');
+    }
+
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Encabezado
+      doc.fontSize(20).text('PAPELERÍA LADY LAURA', { align: 'center' });
+      doc.fontSize(16).text('Cotización', { align: 'center' });
+      doc.moveDown();
+
+      // Información de la cotización
+      doc.fontSize(12);
+      doc.text(`Cotización #: ${cotizacion.idcotizacion}`);
+      doc.text(
+        `Fecha: ${new Date(cotizacion.fechacreacion).toLocaleDateString('es-ES')}`,
+      );
+      doc.text(`Estado: ${cotizacion.estado.toUpperCase()}`);
+      doc.moveDown();
+
+      // Información del cliente
+      if (cotizacion.Usuario) {
+        doc.fontSize(14).text('Información del Cliente', { underline: true });
+        doc.fontSize(12);
+        doc.text(`Nombre: ${cotizacion.Usuario.nombre}`);
+        doc.text(`Email: ${cotizacion.Usuario.email}`);
+        doc.moveDown();
+      }
+
+      // Tabla de productos
+      doc.fontSize(14).text('Detalle de Productos', { underline: true });
+      doc.moveDown(0.5);
+
+      // Encabezados de tabla
+      const tableTop = doc.y;
+      const col1 = 50;
+      const col2 = 250;
+      const col3 = 350;
+      const col4 = 420;
+      const col5 = 490;
+
+      doc.fontSize(10).font('Helvetica-Bold');
+      doc.text('Producto', col1, tableTop);
+      doc.text('Marca', col2, tableTop);
+      doc.text('Cant.', col3, tableTop);
+      doc.text('Precio', col4, tableTop);
+      doc.text('Subtotal', col5, tableTop);
+
+      doc
+        .moveTo(col1, tableTop + 15)
+        .lineTo(550, tableTop + 15)
+        .stroke();
+
+      // Filas de productos
+      doc.font('Helvetica');
+      let yPosition = tableTop + 25;
+
+      cotizacion.Detallecotizacions.forEach((detalle) => {
+        if (yPosition > 700) {
+          doc.addPage();
+          yPosition = 50;
+        }
+
+        const producto = detalle.Producto;
+        const subtotal = detalle.cantidad * parseFloat(detalle.preciounitario);
+
+        doc.text(producto.nombre.substring(0, 30), col1, yPosition, {
+          width: 180,
+        });
+        doc.text(producto.marca || 'N/A', col2, yPosition);
+        doc.text(detalle.cantidad.toString(), col3, yPosition);
+        doc.text(
+          `$${parseFloat(detalle.preciounitario).toFixed(2)}`,
+          col4,
+          yPosition,
+        );
+        doc.text(`$${subtotal.toFixed(2)}`, col5, yPosition);
+
+        yPosition += 25;
+      });
+
+      // Línea antes del total
+      doc.moveTo(col1, yPosition).lineTo(550, yPosition).stroke();
+      yPosition += 15;
+
+      // Total
+      doc.fontSize(12).font('Helvetica-Bold');
+      doc.text('TOTAL:', col4, yPosition);
+      doc.text(`$${parseFloat(cotizacion.total).toFixed(2)}`, col5, yPosition);
+
+      // Pie de página
+      doc.fontSize(10).font('Helvetica');
+      doc.moveDown(3);
+      doc.text('Gracias por su preferencia', { align: 'center' });
+      doc.text('Papelería Lady Laura - Todos los derechos reservados', {
+        align: 'center',
+      });
+
+      doc.end();
+    });
+  } catch (error) {
+    console.error('Error generando PDF:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   createCotizacion,
   processPdfCotizacion,
   getCotizacionesByUsuario,
   getAllCotizaciones,
   updateCotizacionStatus,
+  generateCotizacionPdf,
 };
